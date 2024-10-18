@@ -21,7 +21,9 @@ def conv(mag, phase):
     s21 = s21_real + 1j * s21_imag
     return s21
 
-def organize_data(file_lists, power_shifts):
+
+def organize_data(file_lists, power_shifts = []):
+    #Is the power shift argument optional?
     num_resonators = len(file_lists[0])
     num_points = 4000
 
@@ -41,6 +43,7 @@ def organize_data(file_lists, power_shifts):
 
         for file_list_idx, file_list in enumerate(file_lists):
             file_name = file_list[resonator_idx]
+            print('My name is :' + file_name)
             data = load_csv_data(file_name)
             powers = data['pow'].unique() + power_shifts[file_list_idx]  # Apply power shift here
             powers_resonator.extend(powers)
@@ -99,7 +102,7 @@ def fit_and_save_results(file_lists, power_shifts):
         else:
             print(f"No valid results for file list {file_list_idx}. No CSV file generated.")
 
-def fit_all_resonators():
+def fit_all_resonators(freqs_array, s21_array, unique_powers,no_resonators):
     all_results = []
     for resonator_idx in range(no_resonators):  # Adjust number of resonators as needed
         results = []
@@ -290,7 +293,16 @@ def plot_individual_resonator_results_with_photons(all_resonator_results):
         print(f_rs_filtered)
         print(photon_numbers)
 
-    #Protocol 2: Low Power Reproducibility
+def presentResults(file_lists,power_shifts,no_resonators):
+    '''Fits, saves and plots results for each resonator in arg. file_list with power shift in arg. power shift'''
+    #no_resonators can be replaced by the length of the array, file_lists
+    freqs_array, mags_array, phases_array, s21_array, unique_powers = organize_data(file_lists, power_shifts)
+    fit_and_save_results(file_lists, power_shifts)
+    all_resonator_results = fit_all_resonators(freqs_array,s21_array, unique_powers,no_resonators)
+    #plot_results(all_resonator_results)
+    plot_individual_resonator_results_with_photons(all_resonator_results)
+
+
 
 #Protocol 2: Low Power Reproducibility
 ###########################################################################################################
@@ -374,3 +386,62 @@ def plot(name, subject_id, design_f_r):
     plt.savefig('master_figure_resonator_analysis.png', dpi=400)
     plt.show()
 
+def weighted_average(values, errors):
+    weights = 1 / np.square(errors)
+    weighted_avg = np.sum(values * weights) / np.sum(weights)
+    weighted_error = np.sqrt(1 / np.sum(weights))
+    return weighted_avg, weighted_error
+
+def save_results_to_csv(results, filename):
+    df = pd.DataFrame(results)
+    df.to_csv(filename, index=False)
+
+def presentMOI(datasets,design_f_r,no_resonators,subject_id):
+    '''Iterates through each sweep in the array datasets and finds MOIs to be exported to a csv file and plots them'''
+    for name, file_names in datasets.items():
+        #print(file_names)
+        freqs_array, mags_array, phases_array, s21_array = organize_data(file_names)
+        results = fit_all_resonators(freqs_array, s21_array)
+        save_results_to_csv(results, f'{name}_results.csv')
+
+    combined_results = []
+
+    for resonator_idx in range(no_resonators):
+        all_f_rs = []
+        all_f_r_errors = []
+        all_Q_is = []
+        all_Q_i_errors = []
+        all_Q_cs = []
+        all_Q_c_errors = []
+        
+        for name in datasets.keys():
+            df = load_csv_data(f'{name}_results.csv')
+            all_f_rs.append(df.loc[resonator_idx, 'f_r_avg'])
+            all_f_r_errors.append(df.loc[resonator_idx, 'f_r_err'])
+            all_Q_is.append(df.loc[resonator_idx, 'Q_i_avg'])
+            all_Q_i_errors.append(df.loc[resonator_idx, 'Q_i_err'])
+            all_Q_cs.append(df.loc[resonator_idx, 'Q_c_avg'])
+            all_Q_c_errors.append(df.loc[resonator_idx, 'Q_c_err'])
+        
+        all_f_rs = np.array(all_f_rs)
+        all_f_r_errors = np.array(all_f_r_errors)
+        all_Q_is = np.array(all_Q_is)
+        all_Q_i_errors = np.array(all_Q_i_errors)
+        all_Q_cs = np.array(all_Q_cs)
+        all_Q_c_errors = np.array(all_Q_c_errors)
+        
+        f_r_avg, f_r_err = weighted_average(all_f_rs, all_f_r_errors)
+        Q_i_avg, Q_i_err = weighted_average(all_Q_is, all_Q_i_errors)
+        Q_c_avg, Q_c_err = weighted_average(all_Q_cs, all_Q_c_errors)
+        
+        combined_results.append({
+            'resonator_idx': resonator_idx,
+            'f_r_avg': f_r_avg, 'f_r_err': f_r_err,
+            'Q_i_avg': Q_i_avg, 'Q_i_err': Q_i_err,
+            'Q_c_avg': Q_c_avg, 'Q_c_err': Q_c_err
+        })
+
+    save_results_to_csv(combined_results, 'combined_results.csv')
+    file_name='combined_results.csv'
+    plot(file_name, subject_id, design_f_r)
+    
