@@ -7,22 +7,33 @@ from resonator.shunt import LinearShuntFitter
 import pandas as pd
 from resonator.background import MagnitudeSlopeOffsetPhaseDelay 
 
+#A power sweep is represented by a csv file with the columns: freq, power, mag, phase, re, im
+#"freq" is the measured frequency and "power" is the applied power
+#"mag","phase" and "re","im" represent the transmission parameter (s_21) in polar and rectangular form respectively
+
+#The MOI are resonant frequency (f_r) internal quality factor (Q_i) and the coupling quality factor (Q_c)
+
 #Protocol 1 : Power Sweeps
 ###########################################################################################################
 
 def load_csv_data(file_name):
+    '''Converts a csv file to a Pandas data frame'''
     df = pd.read_csv(file_name)
     return df
 
 def conv(mag, phase):
+    '''Converts a complex number from polar to rectangular representation'''
     mag_linear = 10**(mag / 20)
     s21_real = mag_linear * np.cos(np.deg2rad(phase))
     s21_imag = mag_linear * np.sin(np.deg2rad(phase))
     s21 = s21_real + 1j * s21_imag
     return s21
 
+#def shiftPower(df,power_shift)
+#Shifts the power in the dataframe, df, representing a power sweep
 
 def organize_data(file_lists, power_shifts = []):
+    '''Each file in "file_lists" represents a power sweep. This function concatenates them into one large data set and returns the columns (freq, power, mag, phase, re, im)'''
     #Is the power shift argument optional?
     num_resonators = len(file_lists[0])
     num_points = 4000
@@ -43,18 +54,22 @@ def organize_data(file_lists, power_shifts = []):
 
         for file_list_idx, file_list in enumerate(file_lists):
             file_name = file_list[resonator_idx]
-            print('My name is :' + file_name)
             data = load_csv_data(file_name)
+            #Power is changed discretly, so much the array elements are duplicate
+            #Here the unique values are extracted, and the power shift added.
             powers = data['pow'].unique() + power_shifts[file_list_idx]  # Apply power shift here
-            powers_resonator.extend(powers)
+            powers_resonator.extend(powers) #The array of unique, shifted powers is added to a list with the remaining files
             
             for power in powers:
+                #For each power level (single element in array), there are many elements for the freq,mag,phase and s21.
+                #Here these are extracted
                 subset = data[data['pow'] == power - power_shifts[file_list_idx]]  # Adjust subset selection
                 freqs_array_resonator.append(subset['freq'].values)
                 mags_array_resonator.append(subset['mag'].values)
                 phases_array_resonator.append(subset['phase'].values)
                 s21_array_resonator.append(conv(subset['mag'].values, subset['phase'].values))
 
+        #These are addded to a large array with the remaining files
         freqs_array.append(freqs_array_resonator)
         mags_array.append(mags_array_resonator)
         phases_array.append(phases_array_resonator)
@@ -64,6 +79,10 @@ def organize_data(file_lists, power_shifts = []):
     return freqs_array, mags_array, phases_array, s21_array, unique_powers
     
 def fit_resonator(frequency, data):
+    '''The input to this function is the measured frequency and the transmission parameter (in rectangular representation).
+    These are fitted using a Daniel Flanigans model that assumes a hanger mode configuration and system response (background) for which the magnitude varies linearly with frequency and there is a
+    fixed time delay and phase offset.
+    The output is the resonant frequencies, internal and coupling quality factors.'''
     try:
         resonator = LinearShuntFitter(frequency=frequency, data=data,
                                       background_model=MagnitudeSlopeOffsetPhaseDelay())
@@ -76,6 +95,8 @@ def fit_resonator(frequency, data):
         return None, None, None, None, None
 
 def fit_and_save_results(file_lists, power_shifts):
+    '''Applies the function "fit_resonator" to each resonator in the array "file_lists".
+       The results (f_r,Q_i, Q_c) are saved in a csv file.'''
     for file_list_idx, file_list in enumerate(file_lists):
         results = []
         for resonator_idx, file_name in enumerate(file_list):
@@ -103,6 +124,8 @@ def fit_and_save_results(file_lists, power_shifts):
             print(f"No valid results for file list {file_list_idx}. No CSV file generated.")
 
 def fit_all_resonators(freqs_array, s21_array, unique_powers,no_resonators):
+    '''The input to this function is a set of power sweeps collected into a single data structure (see "organize_data").
+        The output are the power levels, resonant frequencies, internal and coupling quality factors.'''
     all_results = []
     for resonator_idx in range(no_resonators):  # Adjust number of resonators as needed
         results = []
@@ -127,6 +150,7 @@ def fit_all_resonators(freqs_array, s21_array, unique_powers,no_resonators):
     return all_results
 
 def plot_individual_resonator_results(all_resonator_results):
+    '''For a resonator, this function plots internal and coupling quality factors vs. power'''
     for idx, (power_levels, f_rs, Q_is, Qi_errors, Q_cs, Qc_errors) in enumerate(all_resonator_results):
         if len(f_rs) == 0 or len(Q_is) == 0 or len(Q_cs) == 0:
             print(f"No data to plot for resonator {idx+1}. Skipping plot.")
@@ -154,6 +178,7 @@ def plot_individual_resonator_results(all_resonator_results):
         plt.show()
 
 def plot_results(all_resonator_results):
+    '''Plots Q_i and Q_c vs. power for each resonator.'''
     plt.figure(figsize=(12, 8))
     for idx, (power_levels, f_rs, Q_is, Qi_errors, Q_cs, Qc_errors) in enumerate(all_resonator_results):
         if len(Q_is) == 0:
@@ -192,10 +217,11 @@ Z0 = 50  # Impedance of the system (Ohms), assuming a 50 Ohm system, can be adju
 Zr = 50  # Resonator impedance (Ohms), can be adjusted
 
 def calculate_Q_tot(Q_i, Q_c):
-    # Calculate total quality factor Q_tot
+    '''Returns the total quality factor Q_tot'''
     return 1 / (1 / Q_i + 1 / Q_c)
 
 def calculate_photon_number(Q_tot, Qc, fr, power_dBm):
+    '''Converts the power in dBm to a average number of photons for a specific Q_tot, Q_c and f_r'''
     # Convert power from dBm to Watts
     power_watts = 10**((power_dBm-73) / 10) / 1000  # P in Watts
     
@@ -209,6 +235,7 @@ def calculate_photon_number(Q_tot, Qc, fr, power_dBm):
 
 
 def add_secondary_photon_number_axis(ax, power_levels, photon_numbers):
+    '''Auxillary function for plotting'''
     # Create a secondary x-axis on top of the current plot
     ax_photon = ax.twiny()
 
@@ -230,6 +257,7 @@ def add_secondary_photon_number_axis(ax, power_levels, photon_numbers):
     return ax_photon
 
 def plot_individual_resonator_results_with_photons(all_resonator_results):
+    '''Plots Q_i and Q_c versus power (in dBM and photons) for each resonator.'''
     max_value = 5e6  # Maximum allowed value for Q factors and their errors
 
     for idx, (power_levels, f_rs, Q_is, Qi_errors, Q_cs, Qc_errors) in enumerate(all_resonator_results):

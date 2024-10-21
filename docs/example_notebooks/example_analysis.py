@@ -2,7 +2,7 @@
 import os
 from nqcpresonator import analysis
 
-# ? 
+#Describes a sample containing multiple resonators
 subject_id = "B002019D02"
 #Directory for power sweep experiments (Deep, Low, High, Quick overall and reproducibility)
 d_data = r'C:\Users\dfz956\2024-08-26 W4_Al_resonators4_B002019D02 1\2024-08-26 W4_Al_resonators4_B002019D02\2024-08-26 W4_Al_resonators4_B002019D02-run2\data' 
@@ -41,6 +41,7 @@ def Protocol1():
 
     analysis.presentResults(file_lists,power_shifts,no_resonators)
 
+#These functions are bugged 
 def Protocol2():
     no_resonators = 12
     design_f_r = [5e9, 5.1e9, 5.2e9, 5.3e9, 6e9, 6.1e9, 6.2e9, 6.3e9, 7e9, 7.1e9, 7.2e9, 7.3e9]
